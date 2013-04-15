@@ -1,57 +1,86 @@
 import Control.Monad
-import Control.Monad.State
-import Data.Binary
+import Control.Parallel
 import Data.Binary.Get
-import Data.Int
-import Data.List
-import Data.List.Split
-import Data.Word
+import GHC.Float
 import Graphics.Rendering.Cairo hiding (Matrix)
 import Numeric.LinearAlgebra
-import qualified Data.ByteString.Lazy as BS
 import System.Random
-import Text.Printf
+import Unsafe.Coerce
+import qualified Data.ByteString.Lazy as BS
 import Bicubic
 import BinaryExtras
 import RandomExtras
 import Types
 
+opts = mokki
+
 main = do
-	contents <- BS.readFile "tesannwyn.raw"
-	let height = 2816
-	let width = 2688
-	let arr0 = map tesToDouble $ runGet (getMany $ height*width) contents
-	let landscape = (height><width) $ arr0
+	contents <- BS.readFile $ inputFile opts
+	let arr0 = map (rawFunction opts) $ runGet (getMany $ imageWidth opts*imageHeight opts) contents
+	let landscape = (imageHeight opts><imageWidth opts) $ arr0
 	let jitter = randoms $ mkStdGen 53
-	let scale = 2.5 --Tämä on viivojen lähtöpaikkojen keskimääräinen välinen etäisyys
-	let [miny, maxy, minx, maxx] = map fromIntegral [1, height-2, 1, width-2]
-	let (numpointsy, numpointsx) = (floor $ (maxy-miny)/scale, floor $ (maxx-minx)/scale)
+	let [miny, maxy, minx, maxx] = map fromIntegral [1, imageHeight opts-2, 1, imageWidth opts-2]
+	let (numpointsy, numpointsx) = (floor $ (maxy-miny)/(gridWidth opts), floor $ (maxx-minx)/(gridWidth opts))
 	let startinggrid = [(y,x) | y <- [0..numpointsy-1], x<-[0..numpointsx-1]]
 	let startingpoints = zipWith (\(y,x) (jy,jx) -> 
-		( miny + scale * (fromIntegral y + jy)
-		, minx + scale * (fromIntegral x + jx)
+		( miny + (gridWidth opts)* (fromIntegral y + jy)
+		, minx + (gridWidth opts) * (fromIntegral x + jx)
 		)) startinggrid jitter
-	--                                 v   gradient ascentin askelpituus
-	let ascents = map (gradientAscent 1.0 landscape) startingpoints
-	let bitmapmultiplier = 1::Int --Tekee bitmapista n kertaa isomman 
-	s <- createImageSurface FormatARGB32 (bitmapmultiplier*width) (bitmapmultiplier*height)
+	let ascents = map (gradientAscent (ascentDelta opts) landscape) startingpoints
+	s <- createImageSurface FormatARGB32 
+		(floor $ multiplier opts * (fromIntegral $ imageWidth opts)) 
+		(floor $ multiplier opts * (fromIntegral $ imageHeight opts))
 	renderWith s $ do
 		setSourceRGBA 1 1 1 0.0
 		paint
-	mapM_ (drawLine (fromIntegral bitmapmultiplier) s) ascents
-	surfaceWriteToPNG s "vv.png"
+	mapM_ (drawLine (lineWidth opts) (cellWidth opts) (multiplier opts) s) ascents
+	surfaceWriteToPNG s $ outputFile opts
 
-drawLine mult s ((x1,y1,z1):loput@((x2,y2,z2):_)) = do
+drawLine line cell mult s lista = do
 	renderWith s $ do
-		setSourceRGB c c c
-		--Viivan leveys
-		setLineWidth 3
+		setLineWidth line
 		setLineCap LineCapRound
+		go lista
+	where
+	go ((x1,y1,z1):loput@((x2,y2,z2):_)) = do
+		let c = 1.0 - ((atan2 (abs(z1-z2)) cell)/(pi/2)) in setSourceRGB c c c
 		moveTo (x1*mult) (y1*mult)
 		lineTo (x2*mult) (y2*mult)
 		stroke
-	drawLine mult s loput
+		go loput
+	go _ = return ()
+
+morrowind = Options
+	{ inputFile = "tesannwyn.raw"
+	, imageWidth = 2688
+	, imageHeight = 2816
+	, gridWidth = 2.5
+	, multiplier = 1.0
+	, ascentDelta = 1.0
+	, outputFile = "vv.png"
+	, lineWidth = 0.5
+	, cellWidth = 8.0
+	, rawFunction = tesToDouble
+	}
+
+mokki = Options
+	{ inputFile = "2mdem.flt"
+	, imageWidth = 1857
+	, imageHeight = 2136
+	, gridWidth = 2.5
+	, multiplier = 1.5
+	, ascentDelta = 2.0
+	, outputFile = "mok.png"
+	, lineWidth = 0.5
+	, cellWidth = 0.125
+	, rawFunction = rawfloatToDouble
+	}
+
+hajoita :: Int -> [a] -> [a]
+hajoita n lasku = (foldr1 `par` list) `pseq` concat list
 	where
-	c = 1.0 - ((atan2 (abs(z1-z2)) 8)/(pi/2))
-drawLine mult s _ = return ()
+	size = floor $ fromIntegral (length lasku) / fromIntegral n
+	list = chunk (n-1) lasku
+	chunk 0 l = [l]
+	chunk n l = let (a,b) = splitAt size lasku in a : chunk (n-1) b
 

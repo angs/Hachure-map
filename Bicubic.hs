@@ -77,7 +77,7 @@ gradientDescent delta mat (y0, x0) = (x0, y0, z0) : ga x0 y0 z0 dy0 dx0
 	where
 	(z0, dy0, dx0) = bcuint mat (y0, x0)
 	ga x y z dy dx
-		| x < 2 || y < 2 || x > (fromIntegral $ cols mat - 3) || y > (fromIntegral $ rows mat - 3) = []
+		| x' < 2 || y' < 2 || x' > (fromIntegral $ cols mat - 3) || y' > (fromIntegral $ rows mat - 3) = []
 		| z' > z = (x', y', z') : ga x' y' z' dy' dx'
 		| otherwise = []
 		where
@@ -93,7 +93,7 @@ gradientAscent delta mat (y0, x0) = (x0, y0, z0) : ga x0 y0 z0 dy0 dx0
 	where
 	(z0, dy0, dx0) = bcuint mat (y0, x0)
 	ga x y z dy dx
-		| x < 2 || y < 2 || x > (fromIntegral $ cols mat - 3) || y > (fromIntegral $ rows mat - 3) = []
+		| x' < 2 || y' < 2 || x' > (fromIntegral $ cols mat - 3) || y' > (fromIntegral $ rows mat - 3) = []
 		| z' > z = (x', y', z') : ga x' y' z' dy' dx'
 		| otherwise = []
 		where
